@@ -40,11 +40,17 @@ class MuZeroFullyConnectedNetwork(AbstractNetwork):
 
 
 class ResidualBlock(tf.keras.layers.Layer):
+    """
+    residual block used in alphago zero, alpha zero, and muzero paper
+    """
+
     def __init__(self, num_channels=128):
-        super().__init__():
-        self.conv1 = tf.keras.layers.Conv2D(128, kernel_size=3, stride=1)
+        super().__init__()
+        self.conv1 = tf.keras.layers.Conv2D(
+            num_channels, kernel_size=3, strides=1, padding="same")
         self.bn1 = tf.keras.layers.BatchNormalization()
-        self.conv2 = tf.keras.layers.Conv2D(128, kernel_size=3, stride=1)
+        self.conv2 = tf.keras.layers.Conv2D(
+            num_channels, kernel_size=3, strides=1, padding="same")
         self.bn2 = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
 
@@ -59,27 +65,25 @@ class ResidualBlock(tf.keras.layers.Layer):
         return out
 
 
-class Downsample(tf.keras.Model):
-    def __init__(self, in_channels, out_channels, h_w):
-        super(DownsampleCNN, self).__init__()
+class RepresentationNetwork(tf.keras.Model):
+    def __init__(self):
+        super(RepresentationNetwork, self).__init__()
 
         self.conv1 = tf.keras.layers.Conv2D(
-            128, kernel_size=3, stride=2, activation="relu")
+            128, kernel_size=3, strides=2, padding="same", activation="relu")
 
-        self.res_blocks1 = [ResidualBlock() for _ in range(2)]
+        self.res_blocks1 = [ResidualBlock(128) for _ in range(2)]
 
         self.conv2 = tf.keras.layers.Conv2D(
-            256, kernel_size=3, stride=2, activation="relu")
+            256, kernel_size=3, strides=2, padding="same", activation="relu")
 
-        self.res_blocks2 = [ResidualBlock() for _ in range(3)]
+        self.res_blocks2 = [ResidualBlock(256) for _ in range(3)]
 
-        self.avg_pool1 = tf.keras.layers.AveragePooling2D(
-            kernel_size=3, stride=2)
+        self.avg_pool1 = tf.keras.layers.AveragePooling2D(strides=2)
 
-        self.res_blocks3 = [ResidualBlock() for _ in range(3)]
+        self.res_blocks3 = [ResidualBlock(256) for _ in range(3)]
 
-        self.avg_pool2 = tf.keras.layers.AveragePooling2D(
-            kernel_size=3, stride=2)
+        self.avg_pool2 = tf.keras.layers.AveragePooling2D(strides=2)
 
     def call(self, x):
         x = self.conv1(x)
@@ -93,6 +97,80 @@ class Downsample(tf.keras.Model):
             x = block(x)
         x = self.avg_pool2(x)
         return x
+
+
+class DynamicsNetwork(tf.keras.Model):
+    def __init__(self,
+                 num_channels,
+                 full_support_size
+                 ):
+        super(DynamicsNetwork, self).__init__()
+
+        #  reduce the original channel by one, since the last dimension is action
+        self.conv = tf.keras.layers.Conv2D(
+            num_channels, kernel_size=3, strides=1, padding="same")
+        self.bn = tf.keras.layers.BatchNormalization()
+        self.relu = tf.keras.layers.ReLU()
+        self.res_blocks = [ResidualBlock(num_channels) for i in range(3)]
+
+        self.conv_reward = tf.keras.layers.Conv2D(1, kernel_size=1)
+        self.bn_reward = tf.keras.layers.BatchNormalization()
+        self.fc1 = tf.keras.layers.Dense(256, activation="relu")
+        self.fc2 = tf.keras.layers.Dense(full_support_size, activation="tanh")
+
+    def build(self, input_shape):
+        self.batch_size = input_shape.as_list()[0]
+
+    def call(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        for block in self.res_blocks:
+            x = block(x)
+        state = x
+        x = self.conv_reward(x)
+        x = self.bn_reward(x)
+        x = tf.reshape(x, [-1, 1])
+        x = tf.reshape(x, [self.batch_size, -1])
+        x = self.fc1(x)
+        reward = self.fc2(x)
+        return state, reward
+
+
+class PredictionNetwork(tf.keras.Model):
+    def __init__(self,
+                 action_space_size,
+                 full_support_size
+                 ):
+        super(PredictionNetwork, self).__init__()
+        self.action_space_size = action_space_size
+
+        self.conv_policy = tf.keras.layers.Conv2D(2, kernel_size=1)
+        self.bn_policy = tf.keras.layers.BatchNormalization()
+        self.fc_policy = tf.keras.layers.Dense(
+            self.action_space_size, activation="relu")
+
+        self.conv_value = tf.keras.layers.Conv2D(1, kernel_size=1)
+        self.bn_value = tf.keras.layers.BatchNormalization()
+        self.relu_value = tf.keras.layers.ReLU()
+        self.fc_value1 = tf.keras.layers.Dense(256, activation="relu")
+        self.fc_value2 = tf.keras.layers.Dense(
+            full_support_size, activation="tanh")
+
+    def build(self, input_shape):
+        self.batch_size = input_shape.as_list()[0]
+
+    def call(self, x):
+        policy = self.conv_policy(x)
+        policy = self.bn_policy(policy)
+        policy = self.fc_policy(policy)
+
+        value = self.conv_value(x)
+        value = self.bn_value(value)
+        value = tf.reshape(value, [self.batch_size, -1])
+        value = self.fc_value1(value)
+        value = self.fc_value2(value)
+        return policy, value
 
 
 def mlp(input_size,
@@ -113,11 +191,22 @@ def mlp(input_size,
 
 
 if __name__ == "__main__":
-    # net = AbstractNetwork()
-    # net.get_weights()
-    # net = MuZeroFullyConnectedNetwork(12)
-    # print("hello world")
-    # print(net.initial_inference([1, 2, 3]))
+    rep_net = RepresentationNetwork()
+    img_input = tf.random.uniform([4, 96, 96, 128])
+    output = rep_net(img_input)
+    rep_net.summary()
+    print(output.shape)
 
-    model = mlp(10, [8, 8, 8], 12)
-    model.summary()
+    dyn_net = DynamicsNetwork(256, 601)
+    dyn_input = tf.random.uniform([4, 6, 6, 257])
+    output = dyn_net(dyn_input)
+    dyn_net.summary()
+    print(output[0].shape)
+    print(output[1].shape)
+
+    pred_net = DynamicsNetwork(256, 601)
+    pred_input = tf.random.uniform([4, 6, 6, 256])
+    output = pred_net(pred_input)
+    pred_net.summary()
+    print(output[0].shape)
+    print(output[1].shape)
