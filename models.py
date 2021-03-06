@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import numpy as np
 import tensorflow as tf
 
 
@@ -190,23 +191,66 @@ def mlp(input_size,
     return model
 
 
+def support_to_scalar(logits, support_size):
+    probabilities = tf.nn.softmax(logits, axis=-1)
+    support = tf.expand_dims(
+        tf.range(-support_size, support_size + 1, dtype=tf.float32), axis=1)
+    print(probabilities)
+    print(support)
+    x = tf.linalg.matmul(probabilities, support)
+    x = tf.math.sign(x) * (tf.math.square(
+        (tf.math.sqrt(1 + 4 * 0.001 * (tf.math.abs(x) + 1 + 0.001)) - 1) / (2 * 0.001))
+        - 1.0
+    )
+
+    return x
+
+
+def scalar_to_support(x, support_size):
+    x = tf.math.sign(x)*(tf.math.sqrt(tf.math.abs(x) + 1.0) - 1.0) + 0.001*x
+    x = tf.clip_by_value(x, -support_size, support_size - 1e-6)
+    floor = tf.math.floor(x)
+    prob = x - floor
+
+    index_low = floor + support_size
+    flat_index_low = tf.reshape(tf.cast(index_low, dtype=tf.int32), [-1])
+
+    support_axis_dim = 2 * support_size + 1
+    flat_index_low += tf.range(tf.size(x))*support_axis_dim
+    flat_index_high = flat_index_low + 1
+
+    flat_logits = tf.zeros(tf.size(x)*support_axis_dim)
+    flat_logits = tf.tensor_scatter_nd_update(flat_logits, tf.reshape(
+        flat_index_low, [-1, 1]), tf.reshape(1.0 - prob, [-1]))
+    flat_logits = tf.tensor_scatter_nd_update(flat_logits, tf.reshape(
+        flat_index_high, [-1, 1]), tf.reshape(prob, [-1]))
+
+    return tf.reshape(flat_logits, x.shape.as_list() + [support_axis_dim])
+
+
 if __name__ == "__main__":
-    rep_net = RepresentationNetwork()
-    img_input = tf.random.uniform([4, 96, 96, 128])
-    output = rep_net(img_input)
-    rep_net.summary()
-    print(output.shape)
+    # rep_net = RepresentationNetwork()
+    # img_input = tf.random.uniform([4, 96, 96, 128])
+    # output = rep_net(img_input)
+    # rep_net.summary()
+    # print(output.shape)
 
-    dyn_net = DynamicsNetwork(256, 601)
-    dyn_input = tf.random.uniform([4, 6, 6, 257])
-    output = dyn_net(dyn_input)
-    dyn_net.summary()
-    print(output[0].shape)
-    print(output[1].shape)
+    # dyn_net = DynamicsNetwork(256, 601)
+    # dyn_input = tf.random.uniform([4, 6, 6, 257])
+    # output = dyn_net(dyn_input)
+    # dyn_net.summary()
+    # print(output[0].shape)
+    # print(output[1].shape)
 
-    pred_net = DynamicsNetwork(256, 601)
-    pred_input = tf.random.uniform([4, 6, 6, 256])
-    output = pred_net(pred_input)
-    pred_net.summary()
-    print(output[0].shape)
-    print(output[1].shape)
+    # pred_net = DynamicsNetwork(256, 601)
+    # pred_input = tf.random.uniform([4, 6, 6, 256])
+    # output = pred_net(pred_input)
+    # pred_net.summary()
+    # print(output[0].shape)
+    # print(output[1].shape)
+
+    logits = np.array([[-1.0, 0.1, 1.4, 2.5, 2.0]]).astype(np.float32)
+    print(support_to_scalar(logits, support_size=2))
+
+    # print(scalar_to_support(tf.constant(
+    #     [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
