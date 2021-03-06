@@ -219,38 +219,40 @@ def scalar_to_support(x, support_size):
     flat_index_low += tf.range(tf.size(x))*support_axis_dim
     flat_index_high = flat_index_low + 1
 
+    flat_prob = tf.reshape(prob, [-1])
+
     flat_logits = tf.zeros(tf.size(x)*support_axis_dim)
     flat_logits = tf.tensor_scatter_nd_update(flat_logits, tf.reshape(
-        flat_index_low, [-1, 1]), tf.reshape(1.0 - prob, [-1]))
+        flat_index_low, [-1, 1]), 1.0 - flat_prob)
     flat_logits = tf.tensor_scatter_nd_update(flat_logits, tf.reshape(
-        flat_index_high, [-1, 1]), tf.reshape(prob, [-1]))
+        flat_index_high, [-1, 1]), flat_prob)
 
     return tf.reshape(flat_logits, x.shape.as_list() + [support_axis_dim])
 
 
 if __name__ == "__main__":
-    # rep_net = RepresentationNetwork()
-    # img_input = tf.random.uniform([4, 96, 96, 128])
-    # output = rep_net(img_input)
-    # rep_net.summary()
-    # print(output.shape)
+    rep_net = RepresentationNetwork()
+    img_input = tf.random.uniform([4, 96, 96, 128])
+    output = rep_net(img_input)
+    rep_net.summary()
+    print(output.shape)
 
-    # dyn_net = DynamicsNetwork(256, 601)
-    # dyn_input = tf.random.uniform([4, 6, 6, 257])
-    # output = dyn_net(dyn_input)
-    # dyn_net.summary()
-    # print(output[0].shape)
-    # print(output[1].shape)
+    dyn_net = DynamicsNetwork(256, 601)
+    dyn_input = tf.random.uniform([4, 6, 6, 257])
+    output = dyn_net(dyn_input)
+    dyn_net.summary()
+    print(output[0].shape)
+    print(output[1].shape)
 
-    # pred_net = DynamicsNetwork(256, 601)
-    # pred_input = tf.random.uniform([4, 6, 6, 256])
-    # output = pred_net(pred_input)
-    # pred_net.summary()
-    # print(output[0].shape)
-    # print(output[1].shape)
+    pred_net = DynamicsNetwork(256, 601)
+    pred_input = tf.random.uniform([4, 6, 6, 256])
+    output = pred_net(pred_input)
+    pred_net.summary()
+    print(output[0].shape)
+    print(output[1].shape)
 
     logits = np.array([[-1.0, 0.1, 1.4, 2.5, 2.0]]).astype(np.float32)
     print(support_to_scalar(logits, support_size=2))
 
-    # print(scalar_to_support(tf.constant(
-    #     [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
+    print(scalar_to_support(tf.constant(
+        [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
