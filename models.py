@@ -17,29 +17,6 @@ class AbstractNetwork(ABC, tf.keras.Model):
         pass
 
 
-class MuZeroFullyConnectedNetwork(AbstractNetwork):
-    def __init__(self,
-                 observation_shape,
-                 stacked_observations,
-                 action_space_size,
-                 encoding_size,
-                 fc_reward_layers,
-                 fc_value_layers,
-                 fc_policy_layers,
-                 fc_representation_layers,
-                 fc_dynamics_layers,
-                 support_size
-                 ):
-        super(MuZeroFullyConnectedNetwork, self).__init__()
-        self.x = x
-
-    def initial_inference(self, observation):
-        return observation
-
-    def recurrent_inference(self, encoded_state, action):
-        return action
-
-
 class ResidualBlock(tf.keras.layers.Layer):
     """
     residual block used in alphago zero, alpha zero, and muzero paper
@@ -172,23 +149,6 @@ class PredictionNetwork(tf.keras.Model):
         value = self.fc_value1(value)
         value = self.fc_value2(value)
         return policy, value
-
-
-def mlp(input_size,
-        layer_sizes,
-        output_size,
-        activation="gelu",
-        output_activation="gelu"):
-    model = tf.keras.Sequential()
-
-    model.add(tf.keras.layers.Dense(
-        layer_sizes[0], activation=activation, input_shape=(input_size,)))
-    for size in layer_sizes[1:]:
-        model.add(tf.keras.layers.Dense(size, activation=activation))
-    model.add(tf.keras.layers.Dense(
-        output_size, activation=output_activation))
-
-    return model
 
 
 def support_to_scalar(logits, support_size):
