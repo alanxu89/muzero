@@ -84,7 +84,6 @@ class DynamicsNetwork(tf.keras.Model):
                  ):
         super(DynamicsNetwork, self).__init__()
 
-        #  reduce the original channel by one, since the last dimension is action
         self.conv = tf.keras.layers.Conv2D(
             num_channels, kernel_size=3, strides=1, padding="same")
         self.bn = tf.keras.layers.BatchNormalization()
@@ -149,6 +148,71 @@ class PredictionNetwork(tf.keras.Model):
         value = self.fc_value1(value)
         value = self.fc_value2(value)
         return policy, value
+
+
+class MuZeroResidualNetwork(AbstractNetwork):
+    def __init__(self,
+                 observation_shape,
+                 action_space_size,
+                 num_channels,
+                 support_size):
+        super(MuZeroResidualNetwork, self).__init__()
+        self.observation_shape = observation_shape
+        self.action_space_size = action_space_size
+        self.num_channels = num_channels
+        self.support_size = support_size
+        self.full_support_size = 2 * support_size + 1
+
+        self.representation_network = RepresentationNetwork()
+        self.dynamics_network = DynamicsNetwork(
+            self.num_channels, self.full_support_size)
+        self.prediction_network = PredictionNetwork(
+            self.action_space_size, self.full_support_size)
+
+    def prediction(self, encoded_state):
+        policy, value = self.prediction_network(encoded_state)
+        return policy, value
+
+    def representation(self, observation):
+        encoded_state = self.representation_network(observation)
+        return normalize_encoded_state(encoded_state)
+
+    def dynamics(self, encoded_state, action):
+        state_shape = encoded_state.shape.as_list()
+        action_shape = state_shape[:-1] + [self.action_space_size]
+        ones = tf.ones(action_shape)
+        action_one_hot = tf.one_hot(action, depth=self.action_space_size)
+        action_one_hot = action_one_hot[:, tf.newaxis, tf.newaxis, :]
+        action_one_hot = ones*action_one_hot
+
+        x = tf.cat([encoded_state, action_one_hot), axis = -1)
+        next_encoded_state, reward = self.dynamics_network(x)
+
+        return normalize_encoded_state(next_encoded_state), reward
+
+    def initial_inference(self, observation):
+        encoded_state = self.representation(observation)
+        policy_logits, value = self.prediction(encoded_state)
+        reward = tf.zeros(observation.shape.as_list()[0])
+        return (value, reward, policy_logits, encoded_state)
+
+    def recurrent_inference(self, encoded_state, action):
+        next_encoded_state, reward = self.dynamics(encoded_state, action)
+        policy_logits, value = self.prediction(next_encoded_state)
+        return value, reward, policy_logits, next_encoded_state
+
+
+def normalize_encoded_state(encoded_state):
+    shape = encoded_state.shape.as_list()
+    batch_size = shape[0]
+    reshaped_encoded_state = tf.reshape(encoded_state, [batch_size, -1])
+    min_encoded_state = tf.math.reduce_min(reshaped_encoded_state, axis=-1)
+    max_encoded_state = tf.math.reduce_max(reshaped_encoded_state, axis=-1)
+    scaled_encoded_state = reshaped_encoded_state - min_encoded_state
+    normalized_encoded_state = scaled_encoded_state / \
+        (max_encoded_state - min_encoded_state + 1e-5)
+
+    return tf.reshape(normalized_encoded_state, shape)
 
 
 def support_to_scalar(logits, support_size):
