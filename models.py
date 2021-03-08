@@ -4,7 +4,7 @@ import tensorflow as tf
 
 
 class AbstractNetwork(ABC, tf.keras.Model):
-    def __init__():
+    def __init__(self):
         super(AbstractNetwork, self).__init__()
         pass
 
@@ -152,12 +152,10 @@ class PredictionNetwork(tf.keras.Model):
 
 class MuZeroResidualNetwork(AbstractNetwork):
     def __init__(self,
-                 observation_shape,
                  action_space_size,
                  num_channels,
                  support_size):
         super(MuZeroResidualNetwork, self).__init__()
-        self.observation_shape = observation_shape
         self.action_space_size = action_space_size
         self.num_channels = num_channels
         self.support_size = support_size
@@ -185,7 +183,7 @@ class MuZeroResidualNetwork(AbstractNetwork):
         action_one_hot = action_one_hot[:, tf.newaxis, tf.newaxis, :]
         action_one_hot = ones*action_one_hot
 
-        x = tf.cat([encoded_state, action_one_hot), axis = -1)
+        x = tf.cat([encoded_state, action_one_hot], axis=-1)
         next_encoded_state, reward = self.dynamics_network(x)
 
         return normalize_encoded_state(next_encoded_state), reward
@@ -206,8 +204,10 @@ def normalize_encoded_state(encoded_state):
     shape = encoded_state.shape.as_list()
     batch_size = shape[0]
     reshaped_encoded_state = tf.reshape(encoded_state, [batch_size, -1])
-    min_encoded_state = tf.math.reduce_min(reshaped_encoded_state, axis=-1)
-    max_encoded_state = tf.math.reduce_max(reshaped_encoded_state, axis=-1)
+    min_encoded_state = tf.math.reduce_min(
+        reshaped_encoded_state, axis=-1, keepdims=True)
+    max_encoded_state = tf.math.reduce_max(
+        reshaped_encoded_state, axis=-1, keepdims=True)
     scaled_encoded_state = reshaped_encoded_state - min_encoded_state
     normalized_encoded_state = scaled_encoded_state / \
         (max_encoded_state - min_encoded_state + 1e-5)
@@ -280,3 +280,7 @@ if __name__ == "__main__":
 
     print(scalar_to_support(tf.constant(
         [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
+
+    muzero = MuZeroResidualNetwork(16, 16, 100)
+    obs = tf.random.uniform([4, 96, 96, 128])
+    muzero.initial_inference(obs)
