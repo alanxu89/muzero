@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+import numpy as np
 import tensorflow as tf
 
 
 class AbstractNetwork(ABC, tf.keras.Model):
-    def __init__():
+    def __init__(self):
         super(AbstractNetwork, self).__init__()
         pass
 
@@ -14,29 +15,6 @@ class AbstractNetwork(ABC, tf.keras.Model):
     @abstractmethod
     def recurrent_inference(self, encoded_state, action):
         pass
-
-
-class MuZeroFullyConnectedNetwork(AbstractNetwork):
-    def __init__(self,
-                 observation_shape,
-                 stacked_observations,
-                 action_space_size,
-                 encoding_size,
-                 fc_reward_layers,
-                 fc_value_layers,
-                 fc_policy_layers,
-                 fc_representation_layers,
-                 fc_dynamics_layers,
-                 support_size
-                 ):
-        super(MuZeroFullyConnectedNetwork, self).__init__()
-        self.x = x
-
-    def initial_inference(self, observation):
-        return observation
-
-    def recurrent_inference(self, encoded_state, action):
-        return action
 
 
 class ResidualBlock(tf.keras.layers.Layer):
@@ -106,7 +84,6 @@ class DynamicsNetwork(tf.keras.Model):
                  ):
         super(DynamicsNetwork, self).__init__()
 
-        #  reduce the original channel by one, since the last dimension is action
         self.conv = tf.keras.layers.Conv2D(
             num_channels, kernel_size=3, strides=1, padding="same")
         self.bn = tf.keras.layers.BatchNormalization()
@@ -173,21 +150,108 @@ class PredictionNetwork(tf.keras.Model):
         return policy, value
 
 
-def mlp(input_size,
-        layer_sizes,
-        output_size,
-        activation="gelu",
-        output_activation="gelu"):
-    model = tf.keras.Sequential()
+class MuZeroResidualNetwork(AbstractNetwork):
+    def __init__(self,
+                 action_space_size,
+                 num_channels,
+                 support_size):
+        super(MuZeroResidualNetwork, self).__init__()
+        self.action_space_size = action_space_size
+        self.num_channels = num_channels
+        self.support_size = support_size
+        self.full_support_size = 2 * support_size + 1
 
-    model.add(tf.keras.layers.Dense(
-        layer_sizes[0], activation=activation, input_shape=(input_size,)))
-    for size in layer_sizes[1:]:
-        model.add(tf.keras.layers.Dense(size, activation=activation))
-    model.add(tf.keras.layers.Dense(
-        output_size, activation=output_activation))
+        self.representation_network = RepresentationNetwork()
+        self.dynamics_network = DynamicsNetwork(
+            self.num_channels, self.full_support_size)
+        self.prediction_network = PredictionNetwork(
+            self.action_space_size, self.full_support_size)
 
-    return model
+    def prediction(self, encoded_state):
+        policy, value = self.prediction_network(encoded_state)
+        return policy, value
+
+    def representation(self, observation):
+        encoded_state = self.representation_network(observation)
+        return normalize_encoded_state(encoded_state)
+
+    def dynamics(self, encoded_state, action):
+        state_shape = encoded_state.shape.as_list()
+        action_shape = state_shape[:-1] + [self.action_space_size]
+        ones = tf.ones(action_shape)
+        action_one_hot = tf.one_hot(action, depth=self.action_space_size)
+        action_one_hot = action_one_hot[:, tf.newaxis, tf.newaxis, :]
+        action_one_hot = ones*action_one_hot
+
+        x = tf.cat([encoded_state, action_one_hot], axis=-1)
+        next_encoded_state, reward = self.dynamics_network(x)
+
+        return normalize_encoded_state(next_encoded_state), reward
+
+    def initial_inference(self, observation):
+        encoded_state = self.representation(observation)
+        policy_logits, value = self.prediction(encoded_state)
+        reward = tf.zeros(observation.shape.as_list()[0])
+        return (value, reward, policy_logits, encoded_state)
+
+    def recurrent_inference(self, encoded_state, action):
+        next_encoded_state, reward = self.dynamics(encoded_state, action)
+        policy_logits, value = self.prediction(next_encoded_state)
+        return value, reward, policy_logits, next_encoded_state
+
+
+def normalize_encoded_state(encoded_state):
+    shape = encoded_state.shape.as_list()
+    batch_size = shape[0]
+    reshaped_encoded_state = tf.reshape(encoded_state, [batch_size, -1])
+    min_encoded_state = tf.math.reduce_min(
+        reshaped_encoded_state, axis=-1, keepdims=True)
+    max_encoded_state = tf.math.reduce_max(
+        reshaped_encoded_state, axis=-1, keepdims=True)
+    scaled_encoded_state = reshaped_encoded_state - min_encoded_state
+    normalized_encoded_state = scaled_encoded_state / \
+        (max_encoded_state - min_encoded_state + 1e-5)
+
+    return tf.reshape(normalized_encoded_state, shape)
+
+
+def support_to_scalar(logits, support_size):
+    probabilities = tf.nn.softmax(logits, axis=-1)
+    support = tf.expand_dims(
+        tf.range(-support_size, support_size + 1, dtype=tf.float32), axis=1)
+    print(probabilities)
+    print(support)
+    x = tf.linalg.matmul(probabilities, support)
+    x = tf.math.sign(x) * (tf.math.square(
+        (tf.math.sqrt(1 + 4 * 0.001 * (tf.math.abs(x) + 1 + 0.001)) - 1) / (2 * 0.001))
+        - 1.0
+    )
+
+    return x
+
+
+def scalar_to_support(x, support_size):
+    x = tf.math.sign(x)*(tf.math.sqrt(tf.math.abs(x) + 1.0) - 1.0) + 0.001*x
+    x = tf.clip_by_value(x, -support_size, support_size - 1e-6)
+    floor = tf.math.floor(x)
+    prob = x - floor
+
+    index_low = floor + support_size
+    flat_index_low = tf.reshape(tf.cast(index_low, dtype=tf.int32), [-1])
+
+    support_axis_dim = 2 * support_size + 1
+    flat_index_low += tf.range(tf.size(x))*support_axis_dim
+    flat_index_high = flat_index_low + 1
+
+    flat_prob = tf.reshape(prob, [-1])
+
+    flat_logits = tf.zeros(tf.size(x)*support_axis_dim)
+    flat_logits = tf.tensor_scatter_nd_update(flat_logits, tf.reshape(
+        flat_index_low, [-1, 1]), 1.0 - flat_prob)
+    flat_logits = tf.tensor_scatter_nd_update(flat_logits, tf.reshape(
+        flat_index_high, [-1, 1]), flat_prob)
+
+    return tf.reshape(flat_logits, x.shape.as_list() + [support_axis_dim])
 
 
 if __name__ == "__main__":
@@ -210,3 +274,13 @@ if __name__ == "__main__":
     pred_net.summary()
     print(output[0].shape)
     print(output[1].shape)
+
+    logits = np.array([[-1.0, 0.1, 1.4, 2.5, 2.0]]).astype(np.float32)
+    print(support_to_scalar(logits, support_size=2))
+
+    print(scalar_to_support(tf.constant(
+        [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
+
+    muzero = MuZeroResidualNetwork(16, 16, 100)
+    obs = tf.random.uniform([4, 96, 96, 128])
+    muzero.initial_inference(obs)
