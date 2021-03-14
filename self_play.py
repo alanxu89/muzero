@@ -1,4 +1,5 @@
 import numpy as np
+import math
 import tensorflow as tf
 
 import models
@@ -17,6 +18,7 @@ class SelfPlay:
         self.model.load_weights(initial_checkpoint)
 
     def continuous_self_play(self):
+        return 0
 
     def play_game(self, temperature, temperature_threshold, render, opponent, muzero_player):
         game_history = GameHistory()
@@ -32,15 +34,14 @@ class SelfPlay:
             self.game.render()
 
         while not done and len(game_history.action_history) <= self.config.max_moves:
-            assert len(numpy.array(
+            assert len(np.array(
                 observation).shape) == 3, "observation should be 3 dimensionnal"
-            assert numpy.array(observation).shape ==
-                    self.config.observation_shape), "Observation should match the observation_shape defined in MuZeroConfig"
+            assert np.array(observation).shape == self.config.observation_shape,
+            "Observation should match the observation_shape defined in MuZeroConfig"
 
-
-            stacked_observations=game_history.get_stacked_observations(
+            stacked_observations = game_history.get_stacked_observations(
                 -1, self.config.stacked_observations)
-            
+
             if opponent == "self" or muzero_player == self.game.to_play():
                 root, extra_info = MCTS(self.config).run(
                     self.model, stacked_observations, self.game.legal_actions(), self.game.to_play(), True
@@ -50,19 +51,23 @@ class SelfPlay:
                 action = self.select_action(root, temperature)
 
                 if render:
-                    print(f'Tree depth: {mcts_info["max_tree_depth"]}')
-                    print(f"Root value for player {self.game.to_play()}: {root.value():.2f}")
+                    # print(f'Tree depth: {mcts_info["max_tree_depth"]}')
+                    print(
+                        f"Root value for player {self.game.to_play()}: {root.value():.2f}")
 
             else:
-                action, root = select_opponent_action(opponent, stacked_observations)
+                action, root = self.select_opponent_action(
+                    opponent, stacked_observations)
 
             observation, reward, done = self.game.step(action)
-            
-            if render:
-                    print(f"Played action: {self.game.action_to_string(action)}")
-                    self.game.render()
 
-            game_history.store_search_statistics(root, self.config.action_space)
+            if render:
+                print(
+                    f"Played action: {self.game.action_to_string(action)}")
+                self.game.render()
+
+            game_history.store_search_statistics(
+                root, self.config.action_space)
 
             game_history.action_history.append(action)
             game_history.observation_history.append(observation)
@@ -91,47 +96,48 @@ class SelfPlay:
         elif opponent == "expert":
             return self.game.expert_agent(), None
         elif opponent == "random":
-            return numpy.random.choice(self.game.legal_actions()), None
+            return np.random.choice(self.game.legal_actions()), None
         else:
             raise NotImplementedError(
                 'Wrong argument: "opponent" argument should be "self", "human", "expert" or "random"'
             )
 
-    @static_method
+    @staticmethod
     def select_action(node, temperature):
         """
         Select action according to the visit count distribution and the temperature.
         The temperature is changed dynamically with the visit_softmax_temperature function
         in the config.
         """
-        visit_counts = np.array([child.visit_count for child in node.children.values()], dtype="int32")
+        visit_counts = np.array(
+            [child.visit_count for child in node.children.values()], dtype="int32")
         actions = node.children.keys()
 
         if temperature < 1e-7:
-            np.argmax(visit_counts)]
+            action = actions[np.argmax(visit_counts)]
         elif temperature > 1e7:
             action = np.random.choice(actions)
         else:
-            visit_count_distribution = visit_count ** (1.0/ temperature)
-            visit_count_distribution = visit_count_distribution/ sum(visit_count_distribution)
+            visit_count_distribution = visit_counts ** (1.0 / temperature)
+            visit_count_distribution = visit_count_distribution / \
+                sum(visit_count_distribution)
             action = np.random.choice(actions, p=visit_count_distribution)
-        
-        return action
 
+        return action
 
 
 class GameHistory:
     def __init__(self):
-        self.observation_history=[]
-        self.action_history=[]
-        self.reward_history=[]
-        self.to_play_history=[]
-        self.child_visits=[]
-        self.root_values=[]
+        self.observation_history = []
+        self.action_history = []
+        self.reward_history = []
+        self.to_play_history = []
+        self.child_visits = []
+        self.root_values = []
 
     def store_search_statistics(self, root, action_space):
         if root is not None:
-            sum_visits=sum(
+            sum_visits = sum(
                 child.visit_count for child in root.children.values())
             self.child_visits.append([
                 root.children[a].visit_count / sum_visits if a in root.children else 0 for a in action_space
@@ -141,23 +147,23 @@ class GameHistory:
             self.root_values.append(None)
 
     def get_stacked_observations(self, index, num_stacked_observations):
-        index=index % len(self.observation_history)
+        index = index % len(self.observation_history)
 
-        stacked_observations=self.observation_history[index].copy()
+        stacked_observations = self.observation_history[index].copy()
         for past_observation_index in reversed(range(index - num_stacked_observations, index)):
             if past_observation_index >= 0:
-                previous_observation=np.concatenate(
+                previous_observation = np.concatenate(
                     [self.observation_history[past_observation_index],
                         np.ones_like(stacked_observations[0])
                         * self.action_history[past_observation_index + 1]
                      ])
             else:
-                previous_observation=np.concatenate([
+                previous_observation = np.concatenate([
                     np.zeros_like(self.observation_history[index]),
                     np.zeros_like(stacked_observations[0])
                 ])
 
-            stacked_observations=np.concatenate(
+            stacked_observations = np.concatenate(
                 [stacked_observations, previous_observation])
 
         return stacked_observations
@@ -165,13 +171,13 @@ class GameHistory:
 
 class Node:
     def __init__(self, prior):
-        self.visit_count=0
-        self.to_play=-1
-        self.prior=prior
-        self.value_sum=0
-        self.children={}
-        self.hidden_state=None
-        self.reward=0
+        self.visit_count = 0
+        self.to_play = -1
+        self.prior = prior
+        self.value_sum = 0
+        self.children = {}
+        self.hidden_state = None
+        self.reward = 0
 
     def expanded(self):
         return len(self.children) > 0
@@ -187,37 +193,37 @@ class Node:
         expand a node using the value, reward and policy prediction
         obtained from the neural network.
         """
-        self.to_play=to_play
-        self.reward=reward
-        self.hidden_state=hidden_state
+        self.to_play = to_play
+        self.reward = reward
+        self.hidden_state = hidden_state
 
-        policy_values=tf.nn.softmax(policy_logits).numpy()
-        policy={a: policy_values[i] for i, a in enumerate(actions)}
+        policy_values = tf.nn.softmax(policy_logits).np()
+        policy = {a: policy_values[i] for i, a in enumerate(actions)}
         for action, prob in policy.items():
-            self.children[action]=Node(prob)
+            self.children[action] = Node(prob)
 
     def add_exploration_noise(self, dirichlet_alpha, exploration_fraction):
         """
         At the start of each search, we add dirichlet noise to the prior of the root to
         encourage the search to explore new actions.
         """
-        actions=list(self.children.keys())
-        noise=numpy.random.dirichlet([dirichlet_alpha] * len(actions))
-        frac=exploration_fraction
+        actions = list(self.children.keys())
+        noise = np.random.dirichlet([dirichlet_alpha] * len(actions))
+        frac = exploration_fraction
 
         for a, n in zip(actions, noise):
-            self.children[a].prior=self.children[a].prior *
-                (1 - frac) + n * frac
+            self.children[a].prior = self.children[a].prior *
+            (1 - frac) + n * frac
 
 
 class MinMaxStats:
     def __init__(self):
-        self.min=-float("inf")
-        self.max=float("inf")
+        self.min = -float("inf")
+        self.max = float("inf")
 
     def update(self, value):
-        self.min=min(self.min, value)
-        self.max=max(self.max, value)
+        self.min = min(self.min, value)
+        self.max = max(self.max, value)
 
     def normalize(self, value):
         if self.max > self.min:
@@ -228,8 +234,8 @@ class MinMaxStats:
 
 class MCTS:
     def __init__(self, config):
-        self.config=config
-        self.num_players=len(config.players)
+        self.config = config
+        self.num_players = len(config.players)
 
     def run(self,
             model,
@@ -237,19 +243,19 @@ class MCTS:
             legal_actions,
             to_play,
             add_exploration_noise,
-            override_root_with = False):
+            override_root_with=False):
         if override_root_with:
-            root=override_root_with
-            root_predicted_value=None
+            root = override_root_with
+            root_predicted_value = None
         else:
-            root=Node(0)
+            root = Node(0)
 
             (root_predicted_value, reward, policy_logits,
-             hidden_state)=model.initial_inference()
+             hidden_state) = model.initial_inference()
 
-            root_predicted_value=models.support_to_scalar(
+            root_predicted_value = models.support_to_scalar(
                 root_predicted_value, self.config.support_size)
-            reward=models.support_to_scalar(
+            reward = models.support_to_scalar(
                 reward, self.config.support_size)
 
             assert (
@@ -350,7 +356,7 @@ class MCTS:
                 value = new_value
         elif self.num_players == 2:
             for node in reversed(search_path):
-                if node.to_play == virtual_to_play:
+                if node.to_play == to_play:
                     node.value_sum += value
                 else:
                     node.value_sum -= value
