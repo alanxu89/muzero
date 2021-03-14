@@ -9,6 +9,13 @@ class AbstractGame(ABC):
 
     @abstractmethod
     def step(self, action):
+        """
+        Args:
+            action : action of the action_space to take.
+
+        Returns:
+            The new observation, the reward and a boolean if the game has ended.
+        """
         pass
 
     def to_play(self):

@@ -17,10 +17,15 @@ class AtariGame(AbstractGame):
         self.ale.reset_game()
 
     def step(self, action):
-        self.ale.act(action)
+        reward = self.ale.act(action)
+        new_observation = self.ale.getScreenRGB()
+        game_over = self.ale.game_over()
+
+        return new_observation, reward, game_over
 
     def render(self):
-        return self.ale.getScreenRGB()
+        # if cv2 is available, use cv2.imshow(self.ale.getScreenRGB())
+        return
 
     def close(self):
         return
