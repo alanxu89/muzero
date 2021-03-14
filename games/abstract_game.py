@@ -4,16 +4,16 @@ from abc import ABC, abstractmethod
 class AbstractGame(ABC):
 
     @abstractmethod
-    def __init__(self, seed=None):
+    def __init__(self):
         pass
 
     @abstractmethod
     def step(self, action):
         pass
 
-    @abstractmethod
     def to_play(self):
-        pass
+        # return player 0 by default
+        return 0
 
     @abstractmethod
     def legal_actions(self):
