@@ -17,7 +17,7 @@ class SelfPlay:
             config.action_space_size, config.num_channels, config.support_size)
         self.model.load_weights(initial_checkpoint)
 
-    def continuous_self_play(self):
+    def continuous_self_play(self, shared_storage, replay_buffer, test_mode=False):
         return 0
 
     def play_game(self, temperature, temperature_threshold, render, opponent, muzero_player):
