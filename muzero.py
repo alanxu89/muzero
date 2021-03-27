@@ -3,10 +3,12 @@ import time
 import datetime
 import numpy as np
 import pickle
+import ray
+import copy
 
 import tensorflow as tf
 
-from models import MuZeroResidualNetwork
+from models import MuZeroNetwork
 from self_play import SelfPlay
 from replay_buffer import ReplayBuffer
 from shared_storage import SharedStorage
@@ -123,6 +125,8 @@ class MuZero:
         np.random.seed(self.config.seed)
         tf.random.set_seed(self.config.seed)
 
+        ray.init(num_gpus=0, ignore_reinit_error=True)
+
         # Checkpoint and replay buffer used to initialize workers
         self.checkpoint = {
             "weights": None,
@@ -145,6 +149,11 @@ class MuZero:
         }
 
         self.replay_buffer = {}
+
+        cpu_actor = CPUActor.remote()
+        cpu_weights = cpu_actor.get_initial_weights.remote(self.config)
+        self.checkpoint["weights"], self.summary = copy.deepcopy(
+            ray.get(cpu_weights))
 
         # Workers
         self.self_play_workers = None
@@ -292,6 +301,22 @@ class MuZero:
                 self.checkpoint["num_played_steps"] = 0
                 self.checkpoint["num_played_games"] = 0
                 self.checkpoint["num_reanalysed_games"] = 0
+
+
+@ray.remote(num_cpus=0, num_gpus=0)
+class CPUActor:
+    def __init__(self):
+        pass
+
+    def get_initial_weights(self, config):
+        model = MuZeroNetwork(config)
+        weights = model.get_weights()
+        # json model
+        # summary = model.to_json()
+        string_list = []
+        model.summary(print_fn=lambda x: string_list.append(x))
+        summary_string = "\n".join(string_list)
+        return weights, summary_string
 
 
 if __name__ == "__main__":

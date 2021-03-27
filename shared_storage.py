@@ -1,10 +1,12 @@
 import copy
 import os
+import ray
 import numpy as np
 
 import tensorflow as tf
 
 
+@ray.remote()
 class SharedStorage:
     def __init__(self, config, checkpoint):
         self.config = config

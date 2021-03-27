@@ -1,10 +1,10 @@
 import copy
 import time
+import ray
 import numpy as np
-from numpy.core.defchararray import index
-from numpy.lib.function_base import gradient
 
 
+@ray.remote()
 class ReplayBuffer:
     def __init__(self, config, initial_checkpoint, initial_buffer):
         self.config = config
