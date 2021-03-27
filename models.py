@@ -3,6 +3,15 @@ import numpy as np
 import tensorflow as tf
 
 
+class MuZeroNetwork:
+    def __new__(cls, config):
+        return MuZeroResidualNetwork(
+            len(config.action_space),
+            config.channels,
+            config.support_size
+        )
+
+
 class AbstractNetwork(ABC, tf.keras.Model):
     def __init__(self):
         super(AbstractNetwork, self).__init__()
