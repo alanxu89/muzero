@@ -6,16 +6,15 @@ import models
 
 
 class SelfPlay:
-    def __init__(self, initial_checkpoint, Game, config, seed):
+    def __init__(self, initial_checkpoint, game, config, seed):
         self.config = config
-        self.game = Game(seed)
+        self.game = game
 
         np.random.seed(seed)
         tf.random.set_seed(seed)
 
-        self.model = models.MuZeroResidualNetwork(
-            config.action_space_size, config.num_channels, config.support_size)
-        self.model.load_weights(initial_checkpoint)
+        self.model = models.MuZeroNetwork(config)
+        # self.model.load_weights(initial_checkpoint)
 
     def continuous_self_play(self, shared_storage, replay_buffer, test_mode=False):
         return 0
@@ -36,8 +35,8 @@ class SelfPlay:
         while not done and len(game_history.action_history) <= self.config.max_moves:
             assert len(np.array(
                 observation).shape) == 3, "observation should be 3 dimensionnal"
-            assert np.array(observation).shape == self.config.observation_shape,
-            "Observation should match the observation_shape defined in MuZeroConfig"
+            assert np.array(
+                observation).shape == self.config.observation_shape,  "Observation should match the observation_shape defined in MuZeroConfig"
 
             stacked_observations = game_history.get_stacked_observations(
                 -1, self.config.stacked_observations)
@@ -211,9 +210,9 @@ class Node:
         noise = np.random.dirichlet([dirichlet_alpha] * len(actions))
         frac = exploration_fraction
 
-        for a, n in zip(actions, noise):
-            self.children[a].prior = self.children[a].prior *
-            (1 - frac) + n * frac
+        for a, ns in zip(actions, noise):
+            self.children[a].prior = self.children[a].prior * \
+                (1 - frac) + ns * frac
 
 
 class MinMaxStats:

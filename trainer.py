@@ -18,8 +18,10 @@ class Trainer:
         np.random.seed(self.config.seed)
         tf.random.set_seed(self.config.seed)
 
-        self.model = models.MuZeroResidualNetwork(self.config)
-        self.model.set_weights(copy.deepcopy(initial_checkpoint["weights"]))
+        self.model = models.MuZeroNetwork(self.config)
+        initial_weights = copy.deepcopy(initial_checkpoint["weights"])
+        if initial_weights:
+            self.model.set_weights(initial_weights)
 
         self.training_step = initial_checkpoint["training_step"]
 
