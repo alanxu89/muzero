@@ -11,6 +11,7 @@ from replay_buffer import ReplayBuffer
 from shared_storage import SharedStorage
 
 
+@ray.remote
 class Trainer:
     def __init__(self, config, initial_checkpoint):
         self.config = config

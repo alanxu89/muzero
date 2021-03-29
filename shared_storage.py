@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 
 
-@ray.remote()
+@ray.remote
 class SharedStorage:
     def __init__(self, config, checkpoint):
         self.config = config

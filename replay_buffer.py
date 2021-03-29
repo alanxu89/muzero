@@ -4,7 +4,7 @@ import ray
 import numpy as np
 
 
-@ray.remote()
+@ray.remote
 class ReplayBuffer:
     def __init__(self, config, initial_checkpoint, initial_buffer):
         self.config = config

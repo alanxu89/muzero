@@ -6,7 +6,7 @@ import tensorflow as tf
 import models
 
 
-@ray.remote()
+@ray.remote
 class SelfPlay:
     def __init__(self, initial_checkpoint, game, config, seed):
         self.config = config
