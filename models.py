@@ -53,7 +53,7 @@ class ResidualBlock(tf.keras.layers.Layer):
 
 
 class RepresentationNetwork(tf.keras.Model):
-    def __init__(self):
+    def __init__(self, num_channels):
         super(RepresentationNetwork, self).__init__()
 
         self.conv1 = tf.keras.layers.Conv2D(
@@ -62,13 +62,13 @@ class RepresentationNetwork(tf.keras.Model):
         self.res_blocks1 = [ResidualBlock(128) for _ in range(2)]
 
         self.conv2 = tf.keras.layers.Conv2D(
-            256, kernel_size=3, strides=2, padding="same", activation="relu")
+            num_channels, kernel_size=3, strides=2, padding="same", activation="relu")
 
-        self.res_blocks2 = [ResidualBlock(256) for _ in range(3)]
+        self.res_blocks2 = [ResidualBlock(num_channels) for _ in range(3)]
 
         self.avg_pool1 = tf.keras.layers.AveragePooling2D(strides=2)
 
-        self.res_blocks3 = [ResidualBlock(256) for _ in range(3)]
+        self.res_blocks3 = [ResidualBlock(num_channels) for _ in range(3)]
 
         self.avg_pool2 = tf.keras.layers.AveragePooling2D(strides=2)
 
@@ -94,10 +94,10 @@ class DynamicsNetwork(tf.keras.Model):
         super(DynamicsNetwork, self).__init__()
 
         self.conv = tf.keras.layers.Conv2D(
-            num_channels, kernel_size=3, strides=1, padding="same")
+            num_channels-1, kernel_size=3, strides=1, padding="same")
         self.bn = tf.keras.layers.BatchNormalization()
         self.relu = tf.keras.layers.ReLU()
-        self.res_blocks = [ResidualBlock(num_channels) for i in range(3)]
+        self.res_blocks = [ResidualBlock(num_channels-1) for i in range(3)]
 
         self.conv_reward = tf.keras.layers.Conv2D(1, kernel_size=1)
         self.bn_reward = tf.keras.layers.BatchNormalization()
@@ -105,7 +105,7 @@ class DynamicsNetwork(tf.keras.Model):
         self.fc2 = tf.keras.layers.Dense(full_support_size, activation="tanh")
 
     def build(self, input_shape):
-        self.batch_size = input_shape.as_list()[0]
+        self.batch_size = input_shape[0]
 
     def call(self, x):
         x = self.conv(x)
@@ -138,13 +138,13 @@ class PredictionNetwork(tf.keras.Model):
 
         self.conv_value = tf.keras.layers.Conv2D(1, kernel_size=1)
         self.bn_value = tf.keras.layers.BatchNormalization()
-        self.relu_value = tf.keras.layers.ReLU()
+        # self.relu_value = tf.keras.layers.ReLU()
         self.fc_value1 = tf.keras.layers.Dense(256, activation="relu")
         self.fc_value2 = tf.keras.layers.Dense(
             full_support_size, activation="tanh")
 
     def build(self, input_shape):
-        self.batch_size = input_shape.as_list()[0]
+        self.batch_size = input_shape[0]
 
     def call(self, x):
         policy = self.conv_policy(x)
@@ -170,15 +170,11 @@ class MuZeroResidualNetwork(AbstractNetwork):
         self.support_size = support_size
         self.full_support_size = 2 * support_size + 1
 
-        self.representation_network = RepresentationNetwork()
+        self.representation_network = RepresentationNetwork(self.num_channels)
         self.dynamics_network = DynamicsNetwork(
-            self.num_channels, self.full_support_size)
+            self.num_channels + 1, self.full_support_size)
         self.prediction_network = PredictionNetwork(
             self.action_space_size, self.full_support_size)
-
-    def prediction(self, encoded_state):
-        policy, value = self.prediction_network(encoded_state)
-        return policy, value
 
     def representation(self, observation):
         encoded_state = self.representation_network(observation)
@@ -192,19 +188,27 @@ class MuZeroResidualNetwork(AbstractNetwork):
         action_one_hot = action_one_hot[:, tf.newaxis, tf.newaxis, :]
         action_one_hot = ones*action_one_hot
 
-        x = tf.cat([encoded_state, action_one_hot], axis=-1)
+        x = tf.concat([encoded_state, action_one_hot], axis=-1)
         next_encoded_state, reward = self.dynamics_network(x)
 
         return normalize_encoded_state(next_encoded_state), reward
 
+    def prediction(self, encoded_state):
+        policy, value = self.prediction_network(encoded_state)
+        return policy, value
+
     def initial_inference(self, observation):
         encoded_state = self.representation(observation)
+        print(self.representation_network.summary())
+        print(encoded_state.shape)
         policy_logits, value = self.prediction(encoded_state)
+        print(self.prediction_network.summary())
         reward = tf.zeros(observation.shape.as_list()[0])
         return (value, reward, policy_logits, encoded_state)
 
     def recurrent_inference(self, encoded_state, action):
         next_encoded_state, reward = self.dynamics(encoded_state, action)
+        print(self.dynamics_network.summary())
         policy_logits, value = self.prediction(next_encoded_state)
         return value, reward, policy_logits, next_encoded_state
 
@@ -264,7 +268,7 @@ def scalar_to_support(x, support_size):
 
 
 if __name__ == "__main__":
-    rep_net = RepresentationNetwork()
+    rep_net = RepresentationNetwork(256)
     img_input = tf.random.uniform([4, 96, 96, 128])
     output = rep_net(img_input)
     rep_net.summary()
@@ -277,7 +281,7 @@ if __name__ == "__main__":
     print(output[0].shape)
     print(output[1].shape)
 
-    pred_net = DynamicsNetwork(256, 601)
+    pred_net = PredictionNetwork(256, 601)
     pred_input = tf.random.uniform([4, 6, 6, 256])
     output = pred_net(pred_input)
     pred_net.summary()
@@ -290,6 +294,10 @@ if __name__ == "__main__":
     print(scalar_to_support(tf.constant(
         [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
 
-    muzero = MuZeroResidualNetwork(16, 16, 100)
-    obs = tf.random.uniform([4, 96, 96, 128])
-    muzero.initial_inference(obs)
+    model = MuZeroResidualNetwork(4, 256, 300)
+    observations = tf.random.uniform([2, 96, 96, 128])
+    _, _, _, encoded_state = model.initial_inference(observations)
+    action = [0, 1]
+    model.recurrent_inference(encoded_state, action)
+    weights = model.get_weights()
+    print(model.summary())

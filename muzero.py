@@ -8,7 +8,7 @@ import copy
 
 import tensorflow as tf
 
-from models import MuZeroNetwork
+from models import MuZeroNetwork, MuZeroResidualNetwork
 from self_play import SelfPlay
 from replay_buffer import ReplayBuffer
 from shared_storage import SharedStorage
@@ -310,6 +310,10 @@ class CPUActor:
 
     def get_initial_weights(self, config):
         model = MuZeroNetwork(config)
+        observations = tf.random.uniform([2, 96, 96, 128])
+        _, _, _, encoded_state = model.initial_inference(observations)
+        action = [0, 1]
+        model.recurrent_inference(encoded_state, action)
         weights = model.get_weights()
         # json model
         # summary = model.to_json()
