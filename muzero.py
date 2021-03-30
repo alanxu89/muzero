@@ -168,37 +168,42 @@ class MuZero:
             os.makedirs(self.config.results_path, exist_ok=True)
 
         # Initialize workers
-        self.training_worker = Trainer(self.config, self.checkpoint)
-        self.shared_storage_worker = SharedStorage(
+        self.training_worker = Trainer.options(
+            num_cpus=0, num_gpus=1 if self.config.train_on_gpu else 0).remote(self.config, self.checkpoint)
+
+        self.shared_storage_worker = SharedStorage.remote(
             self.config, self.checkpoint)
-        self.replay_buffer_worker = ReplayBuffer(
+        self.shared_storage_worker.set_info.remote("terminate", False)
+
+        self.replay_buffer_worker = ReplayBuffer.remote(
             self.config, self.checkpoint, self.replay_buffer)
-        self.self_play_workers = [SelfPlay(self.checkpoint, self.Game,
-                                           self.config, self.config.seed + seed)
+
+        self.self_play_workers = [SelfPlay.remote(self.checkpoint, self.Game,
+                                                  self.config, self.config.seed + seed)
                                   for seed in range(self.config.num_workers)]
 
         # launch self play
         for self_play_worker in self.self_play_workers:
-            self_play_worker.continuous_self_play(
+            self_play_worker.continuous_self_play.remote(
                 self.shared_storage_worker, self.replay_buffer_worker)
 
-        self.training_worker.continuous_update_weights(
+        self.training_worker.continuous_update_weights.remote(
             self.replay_buffer_worker, self.shared_storage_worker)
 
         if log_in_tensorboard:
             self.logging_loop()
 
     def logging_loop(self):
-        self.test_worker = SelfPlay(
+        self.test_worker = SelfPlay.remote(
             self.checkpoint, self.Game, self.config, self.config.seed + self.config.num_workers)
-        self.test_worker.continuous_self_play(
+        self.test_worker.continuous_self_play.remote(
             self.shared_storage_worker, None, True)
         writer = tf.summary.create_file_writer("/tmp/mylogs/eager")
 
         hyper_params_table = [
             f"| {key} | {value} |" for key, value in self.config.__dict__.items()
         ]
-        writer.add_text("model summary", "")
+        tf.summary.text("model summary", "")
 
         count = 0
         keys = [
@@ -221,7 +226,7 @@ class MuZero:
         try:
             while count < self.config.training_steps:
                 # details to be implemented
-                writer.add_scalar("3.Loss/Reward_loss", 123, count)
+                tf.summary.scalar("3.Loss/Reward_loss", 123, count)
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass
