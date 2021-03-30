@@ -109,6 +109,14 @@ class MuZeroConfig:
         # training can take much longer. Set it to None to disable it
         self.ratio = None
 
+    def visit_softmax_temperature_fn(self, steps):
+        if steps < 500e3:
+            return 1.0
+        elif steps < 750e3:
+            return 0.5
+        else:
+            return 0.25
+
 
 class MuZero:
     def __init__(self, game_name=None, config=None):
