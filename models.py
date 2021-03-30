@@ -199,18 +199,28 @@ class MuZeroResidualNetwork(AbstractNetwork):
 
     def initial_inference(self, observation):
         encoded_state = self.representation(observation)
-        print(self.representation_network.summary())
-        print(encoded_state.shape)
         policy_logits, value = self.prediction(encoded_state)
-        print(self.prediction_network.summary())
         reward = tf.zeros(observation.shape.as_list()[0])
         return (value, reward, policy_logits, encoded_state)
 
     def recurrent_inference(self, encoded_state, action):
         next_encoded_state, reward = self.dynamics(encoded_state, action)
-        print(self.dynamics_network.summary())
         policy_logits, value = self.prediction(next_encoded_state)
         return value, reward, policy_logits, next_encoded_state
+
+    def get_summary(self):
+        rep_summary = get_model_summary(self.representation_network)
+        pred_summary = get_model_summary(self.prediction_network)
+        dyn_summary = get_model_summary(self.dynamics_network)
+        return rep_summary + "\n\n" + pred_summary + "\n\n" + dyn_summary
+
+
+def get_model_summary(model):
+    string_list = []
+    model.summary(print_fn=lambda x: string_list.append(x))
+    summary_string = "\n".join(string_list)
+
+    return summary_string
 
 
 def normalize_encoded_state(encoded_state):
@@ -300,4 +310,6 @@ if __name__ == "__main__":
     action = [0, 1]
     model.recurrent_inference(encoded_state, action)
     weights = model.get_weights()
-    print(model.summary())
+    for w in weights:
+        print(w.shape)
+    print(model.get_summary())

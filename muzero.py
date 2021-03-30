@@ -303,7 +303,7 @@ class MuZero:
                 self.checkpoint["num_reanalysed_games"] = 0
 
 
-@ray.remote(num_cpus=0, num_gpus=0)
+@ray.remote(num_cpus=1, num_gpus=0)
 class CPUActor:
     def __init__(self):
         pass
@@ -315,12 +315,8 @@ class CPUActor:
         action = [0, 1]
         model.recurrent_inference(encoded_state, action)
         weights = model.get_weights()
-        # json model
-        # summary = model.to_json()
-        string_list = []
-        model.summary(print_fn=lambda x: string_list.append(x))
-        summary_string = "\n".join(string_list)
-        return weights, summary_string
+        summary = model.get_summary()
+        return weights, summary
 
 
 if __name__ == "__main__":
