@@ -32,8 +32,8 @@ class SelfPlay:
             if not test_mode:
                 game_history = self.play_game(
                     self.config.visit_softmax_temperature_fn(
-                        steps=shared_storage.get_info.remote(
-                            "training_step")
+                        steps=ray.get(shared_storage.get_info.remote(
+                            "training_step"))
                     ),
                     self.config.temperature_threshold,
                     False,
