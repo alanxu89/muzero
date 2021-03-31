@@ -323,10 +323,6 @@ class CPUActor:
 
     def get_initial_weights(self, config):
         model = MuZeroNetwork(config)
-        observations = tf.random.uniform([2, 96, 96, 128])
-        _, _, _, encoded_state = model.initial_inference(observations)
-        action = [0, 1]
-        model.recurrent_inference(encoded_state, action)
         weights = model.get_weights()
         summary = model.get_summary()
         return weights, summary

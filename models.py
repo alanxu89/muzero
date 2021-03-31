@@ -176,6 +176,8 @@ class MuZeroResidualNetwork(AbstractNetwork):
         self.prediction_network = PredictionNetwork(
             self.action_space_size, self.full_support_size)
 
+        self.build_model()
+
     def representation(self, observation):
         encoded_state = self.representation_network(observation)
         return normalize_encoded_state(encoded_state)
@@ -213,6 +215,12 @@ class MuZeroResidualNetwork(AbstractNetwork):
         pred_summary = get_model_summary(self.prediction_network)
         dyn_summary = get_model_summary(self.dynamics_network)
         return rep_summary + "\n\n" + pred_summary + "\n\n" + dyn_summary
+
+    def build_model(self):
+        observation = tf.random.uniform([2, 96, 96, 128])
+        action = tf.constant([1, 2], dtype=tf.int32)
+        encoded_state = self.representation(observation)
+        self.recurrent_inference(encoded_state, action)
 
 
 def get_model_summary(model):
@@ -305,11 +313,4 @@ if __name__ == "__main__":
         [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
 
     model = MuZeroResidualNetwork(4, 256, 300)
-    observations = tf.random.uniform([2, 96, 96, 128])
-    _, _, _, encoded_state = model.initial_inference(observations)
-    action = [0, 1]
-    model.recurrent_inference(encoded_state, action)
-    weights = model.get_weights()
-    for w in weights:
-        print(w.shape)
     print(model.get_summary())
