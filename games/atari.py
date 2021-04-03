@@ -1,21 +1,25 @@
 import os
-import cv2
 
+import cv2
+import numpy as np
 from ale_py import ALEInterface
 
 from games.abstract_game import AbstractGame
 
 
 class AtariGame(AbstractGame):
-    def __init__(self, rom_file=None, seed=None, img_size=(96, 96)):
+    def __init__(self, game_name="space_invaders", seed=None, img_size=(96, 96)):
         super().__init__()
         self.ale = ALEInterface()
         if seed is None:
             seed = 123
         self.ale.setInt("random_seed", seed)
-        if rom_file is None:
-            rom_file = "/Users/alanquantum/MachineLearning/atari_roms/space_invaders.bin"
-        self.ale.loadROM(rom_file)
+        if game_name is None:
+            self.game_name = "space_invaders"
+        else:
+            self.game_name = game_name
+        self.rom_file = f"/Users/alanquantum/MachineLearning/atari_roms/{game_name}.bin"
+        self.ale.loadROM(self.rom_file)
         self.img_size = img_size
 
     def legal_actions(self):
@@ -23,18 +27,20 @@ class AtariGame(AbstractGame):
 
     def reset(self):
         self.ale.reset_game()
+        observation = cv2.resize(self.ale.getScreenRGB(), self.img_size)
+        observation = np.array(observation, dtype="float32") / 255.0
 
-        return cv2.resize(self.ale.getScreenRGB(), self.img_size)
+        return observation
 
     def step(self, action):
         reward = self.ale.act(action)
         new_observation = cv2.resize(self.ale.getScreenRGB(), self.img_size)
+        new_observation = np.array(new_observation, dtype="float32") / 255.0
         game_over = self.ale.game_over()
 
         return new_observation, reward, game_over
 
     def render(self):
-        # if cv2 is available, use cv2.imshow(self.ale.getScreenRGB())
         return cv2.imshow("atari", self.ale.getScreenRGB())
 
     def close(self):
@@ -42,9 +48,7 @@ class AtariGame(AbstractGame):
 
 
 if __name__ == "__main__":
-    g = AtariGame(
-        "/Users/alanquantum/MachineLearning/atari_roms/space_invaders.bin", 123)
-    # screen_rgb = g.render()
+    g = AtariGame(seed=123)
     img = g.reset()
     print(img.shape)
 
