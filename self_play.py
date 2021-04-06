@@ -6,13 +6,14 @@ import numpy as np
 import tensorflow as tf
 
 import models
+from games.atari import AtariGame
 
 
 @ray.remote
 class SelfPlay:
-    def __init__(self, initial_checkpoint, game, config, seed):
+    def __init__(self, initial_checkpoint, game_name, config, seed):
         self.config = config
-        self.game = game
+        self.game = AtariGame(game_name=game_name, seed=seed)
 
         np.random.seed(seed)
         tf.random.set_seed(seed)
@@ -219,22 +220,28 @@ class GameHistory:
     def get_stacked_observations(self, index, num_stacked_observations):
         index = index % len(self.observation_history)
 
-        stacked_observations = self.observation_history[index].copy()
+        # stacked_observations = self.observation_history[index].copy()
+        # print(stacked_observations.shape)
+        stacked_observations = []
         for past_observation_index in reversed(range(index - num_stacked_observations, index)):
             if past_observation_index >= 0:
                 previous_observation = np.concatenate(
                     [self.observation_history[past_observation_index],
-                        np.ones_like(stacked_observations[0])
+                        np.ones_like(
+                            self.observation_history[past_observation_index][:, :, :1])
                         * self.action_history[past_observation_index + 1]
-                     ])
+                     ], asix=-1)
             else:
                 previous_observation = np.concatenate([
                     np.zeros_like(self.observation_history[index]),
-                    np.zeros_like(stacked_observations[0])
-                ])
+                    np.zeros_like(self.observation_history[index][:, :, :1])
+                ], axis=-1)
 
-            stacked_observations = np.concatenate(
-                [stacked_observations, previous_observation])
+            if len(stacked_observations) == 0:
+                stacked_observations = previous_observation
+            else:
+                stacked_observations = np.concatenate(
+                    [stacked_observations, previous_observation], axis=-1)
 
         return stacked_observations
 
@@ -320,8 +327,10 @@ class MCTS:
         else:
             root = Node(0)
 
+            observation = tf.expand_dims(observation, axis=0)
+
             (root_predicted_value, reward, policy_logits,
-             hidden_state) = model.initial_inference()
+             hidden_state) = model.initial_inference(observation)
 
             root_predicted_value = models.support_to_scalar(
                 root_predicted_value, self.config.support_size)
