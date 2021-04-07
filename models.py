@@ -104,10 +104,8 @@ class DynamicsNetwork(tf.keras.Model):
         self.fc1 = tf.keras.layers.Dense(256, activation="relu")
         self.fc2 = tf.keras.layers.Dense(full_support_size, activation="tanh")
 
-    def build(self, input_shape):
-        self.batch_size = input_shape[0]
-
     def call(self, x):
+        batch_size = x.shape[0]
         x = self.conv(x)
         x = self.bn(x)
         x = self.relu(x)
@@ -117,7 +115,7 @@ class DynamicsNetwork(tf.keras.Model):
         x = self.conv_reward(x)
         x = self.bn_reward(x)
         x = tf.reshape(x, [-1, 1])
-        x = tf.reshape(x, [self.batch_size, -1])
+        x = tf.reshape(x, [batch_size, -1])
         x = self.fc1(x)
         reward = self.fc2(x)
         return state, reward
@@ -143,17 +141,15 @@ class PredictionNetwork(tf.keras.Model):
         self.fc_value2 = tf.keras.layers.Dense(
             full_support_size, activation="tanh")
 
-    def build(self, input_shape):
-        self.batch_size = input_shape[0]
-
     def call(self, x):
+        batch_size = x.shape[0]
         policy = self.conv_policy(x)
         policy = self.bn_policy(policy)
         policy = self.fc_policy(policy)
 
         value = self.conv_value(x)
         value = self.bn_value(value)
-        value = tf.reshape(value, [self.batch_size, -1])
+        value = tf.reshape(value, [batch_size, -1])
         value = self.fc_value1(value)
         value = self.fc_value2(value)
         return policy, value
@@ -202,7 +198,11 @@ class MuZeroResidualNetwork(AbstractNetwork):
     def initial_inference(self, observation):
         encoded_state = self.representation(observation)
         policy_logits, value = self.prediction(encoded_state)
-        reward = tf.zeros(observation.shape.as_list()[0])
+        reward = tf.zeros(self.full_support_size)
+        reward = tf.tensor_scatter_nd_update(
+            reward, [[self.full_support_size//2]], [1.0])
+        reward = tf.reshape(tf.math.log(reward), [1, -1])
+        reward = tf.repeat(reward, repeats=len(observation), axis=0)
         return (value, reward, policy_logits, encoded_state)
 
     def recurrent_inference(self, encoded_state, action):
@@ -250,8 +250,6 @@ def support_to_scalar(logits, support_size):
     probabilities = tf.nn.softmax(logits, axis=-1)
     support = tf.expand_dims(
         tf.range(-support_size, support_size + 1, dtype=tf.float32), axis=1)
-    print(probabilities)
-    print(support)
     x = tf.linalg.matmul(probabilities, support)
     x = tf.math.sign(x) * (tf.math.square(
         (tf.math.sqrt(1 + 4 * 0.001 * (tf.math.abs(x) + 1 + 0.001)) - 1) / (2 * 0.001))

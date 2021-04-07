@@ -182,7 +182,7 @@ class SelfPlay:
         """
         visit_counts = np.array(
             [child.visit_count for child in node.children.values()], dtype="int32")
-        actions = node.children.keys()
+        actions = list(node.children.keys())
 
         if temperature < 1e-7:
             action = actions[np.argmax(visit_counts)]
@@ -230,7 +230,7 @@ class GameHistory:
                         np.ones_like(
                             self.observation_history[past_observation_index][:, :, :1])
                         * self.action_history[past_observation_index + 1]
-                     ], asix=-1)
+                     ], axis=-1)
             else:
                 previous_observation = np.concatenate([
                     np.zeros_like(self.observation_history[index]),
@@ -274,7 +274,7 @@ class Node:
         self.reward = reward
         self.hidden_state = hidden_state
 
-        policy_values = tf.nn.softmax(policy_logits).np()
+        policy_values = tf.reshape(tf.nn.softmax(policy_logits), [-1])
         policy = {a: policy_values[i] for i, a in enumerate(actions)}
         for action, prob in policy.items():
             self.children[action] = Node(prob)
@@ -295,8 +295,8 @@ class Node:
 
 class MinMaxStats:
     def __init__(self):
-        self.min = -float("inf")
-        self.max = float("inf")
+        self.max = -float("inf")
+        self.min = float("inf")
 
     def update(self, value):
         self.min = min(self.min, value)
@@ -338,7 +338,7 @@ class MCTS:
                 reward, self.config.support_size)
 
             assert (
-                legal_actions
+                len(legal_actions) > 0
             ), f"Legal actions should not be an empty array. Got {legal_actions}."
             assert set(legal_actions).issubset(
                 set(self.config.action_space)
@@ -372,10 +372,10 @@ class MCTS:
 
             parent = search_path[-2]
             value, reward, policy_logits, hidden_state = model.recurrent_inference(
-                parent.hidden_state, action)
-            value = model.support_to_scalar(
+                parent.hidden_state, tf.constant([action], dtype=tf.int32))
+            value = models.support_to_scalar(
                 value, self.config.support_size)
-            reward = model.support_to_scalar(
+            reward = models.support_to_scalar(
                 reward, self.config.support_size)
 
             node.expand(self.config.action_space, virtual_to_play,
@@ -397,7 +397,7 @@ class MCTS:
                       for _, child in node.children.items())
 
         action = np.random.choice([
-            a for a, child in node.children.items
+            a for a, child in node.children.items()
             if self.ucb_score(node, child, min_max_stats) == max_ucb
         ])
 
@@ -405,7 +405,8 @@ class MCTS:
 
     def ucb_score(self, parent, child, min_max_stats):
         pb_c = math.log(
-            (parent.visit_count + self.config.pb_c_base + 1)/self.config.pb_c_base)
+            (parent.visit_count + self.config.pb_c_base + 1)/self.config.pb_c_base
+        )
         pb_c += self.config.pb_c_init
         pb_c *= math.sqrt(parent.visit_count) / (child.visit_count + 1)
 

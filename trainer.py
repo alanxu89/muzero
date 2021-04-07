@@ -26,10 +26,12 @@ class Trainer:
 
         self.training_step = initial_checkpoint["training_step"]
 
-        self.optimizer = tf.keras.optimizers.Adam(
-            lr=self.config.lr_init,
-            # weight_decay=self.config.weight_decay,
-        )
+        self.lr_schedule = CustomSchedule(
+            self.config.lr_init, self.config.lr_decay_rate, self.config.lr_decay_steps)
+
+        self.optimizer = tf.keras.optimizers.Adam(self.lr_schedule
+                                                  # weight_decay=self.config.weight_decay,
+                                                  )
 
         if initial_checkpoint["optimizer_state"] is not None:
             self.optimizer.set_weights(copy.deepcopy(
@@ -39,8 +41,7 @@ class Trainer:
                                   replay_buffer: ReplayBuffer,
                                   shared_storage: SharedStorage):
         while self.training_step < self.config.training_steps:
-            batch = replay_buffer.get_batch()
-            self.update_lr()
+            batch = replay_buffer.get_batch.remote()
             priorities, total_loss, value_loss, reward_loss, policy_loss = self.update_weights(
                 batch)
 
@@ -164,16 +165,6 @@ class Trainer:
             zip(grads, self.model.trainable_weights))
         self.training_step += 1
 
-    def update_lr(self):
-        """
-        Update learning rate
-        """
-        lr = self.config.lr_init * self.config.lr_decay_rate ** (
-            self.training_step / self.config.lr_decay_steps
-        )
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = lr
-
     @staticmethod
     def loss_function(
             value,
@@ -189,3 +180,14 @@ class Trainer:
             target_policy * tf.nn.log_softmax(policy_logits))
 
         return value_loss, reward_loss, policy_loss
+
+
+class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, lr_init, lr_decay_rate, lr_decay_steps):
+        super().__init__()
+        self.lr_init = lr_init
+        self.lr_decay_rate = lr_decay_rate
+        self.lr_decay_steps = lr_decay_steps
+
+    def __call__(self, step):
+        return self.lr_init * self.lr_decay_rate ** (step / self.lr_decay_steps)

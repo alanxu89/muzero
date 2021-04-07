@@ -50,6 +50,12 @@ class ReplayBuffer:
             self.total_samples -= len(self.buffer[del_id].root_values)
             del self.buffer[del_id]
 
+        if shared_storage:
+            shared_storage.set_info.remote(
+                "num_played_games", self.num_played_games)
+            shared_storage.set_info.remote(
+                "num_played_steps", self.num_played_steps)
+
     def get_buffer(self):
         return self.buffer
 

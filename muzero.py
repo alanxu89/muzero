@@ -22,14 +22,14 @@ class MuZeroConfig:
         self.max_num_gpus = None
 
         self.observation_shape = (96, 96, 3)
-        self.action_space = list(range(4))
+        self.action_space = list(range(18))
         self.players = list(range(1))
         self.stacked_observations = 32
 
         self.muzero_player = 0
         self.opponent = None
 
-        self.num_workers = 6
+        self.num_workers = 1
         self.selfplay_on_gpu = False
         self.max_moves = 27000
         self.num_simulations = 50
@@ -103,7 +103,7 @@ class MuZeroConfig:
         self.reanalyse_on_gpu = False
 
         # Adjust the self play / training ratio to avoid over/underfitting
-        self.self_play_delay = 0  # Number of seconds to wait after each played game
+        self.self_play_delay = 0  # Number of seconds to wait after each played game_name
         self.training_delay = 0  # Number of seconds to wait after each training step
         # Desired training steps per self played step ratio. Equivalent to a synchronous version,
         # training can take much longer. Set it to None to disable it
@@ -119,8 +119,8 @@ class MuZeroConfig:
 
 
 class MuZero:
-    def __init__(self, game_name=None, config=None):
-        self.Game = AtariGame()
+    def __init__(self, game_name="space_invaders", config=None):
+        self.game_name = game_name
         self.config = MuZeroConfig()
 
         if config:
@@ -171,13 +171,20 @@ class MuZero:
         self.replay_buffer_worker = None
         self.shared_storage_worker = None
 
-    def train(self, log_in_tensorboard=True):
+    def train(self, log_in_tensorboard=False):
         if log_in_tensorboard or self.config.save_model:
             os.makedirs(self.config.results_path, exist_ok=True)
 
         # Initialize workers
+
+        if self.config.train_on_gpu:
+            n_cpus = 0
+            n_gpus = len(tf.config.list_physical_devices('GPU'))
+        else:
+            n_cpus = 1
+            n_gpus = 0
         self.training_worker = Trainer.options(
-            num_cpus=0, num_gpus=1 if self.config.train_on_gpu else 0).remote(self.config, self.checkpoint)
+            num_cpus=n_cpus, num_gpus=n_gpus).remote(self.config, self.checkpoint)
 
         self.shared_storage_worker = SharedStorage.remote(
             self.config, self.checkpoint)
@@ -186,24 +193,26 @@ class MuZero:
         self.replay_buffer_worker = ReplayBuffer.remote(
             self.config, self.checkpoint, self.replay_buffer)
 
-        self.self_play_workers = [SelfPlay.remote(self.checkpoint, self.Game,
+        self.self_play_workers = [SelfPlay.remote(self.checkpoint, self.game_name,
                                                   self.config, self.config.seed + seed)
                                   for seed in range(self.config.num_workers)]
 
         # launch self play
+        print("lauching self_play workers")
         for self_play_worker in self.self_play_workers:
+            print("lauching self_play worker")
             self_play_worker.continuous_self_play.remote(
                 self.shared_storage_worker, self.replay_buffer_worker)
-
-        self.training_worker.continuous_update_weights.remote(
-            self.replay_buffer_worker, self.shared_storage_worker)
+        time.sleep(100)
+        # self.training_worker.continuous_update_weights.remote(
+        #     self.replay_buffer_worker, self.shared_storage_worker)
 
         if log_in_tensorboard:
             self.logging_loop()
 
     def logging_loop(self):
         self.test_worker = SelfPlay.remote(
-            self.checkpoint, self.Game, self.config, self.config.seed + self.config.num_workers)
+            self.checkpoint, self.game_name, self.config, self.config.seed + self.config.num_workers)
         self.test_worker.continuous_self_play.remote(
             self.shared_storage_worker, None, True)
         writer = tf.summary.create_file_writer("/tmp/mylogs/eager")
@@ -264,7 +273,7 @@ class MuZero:
         opponent = opponent if opponent else self.config.opponent
         muzero_player = muzero_player if muzero_player else self.config.muzero_player
         self_player_worker = SelfPlay(
-            self.checkpoint, self.Game, self.config, np.random.randint(10000))
+            self.checkpoint, self.game_name, self.config, np.random.randint(10000))
         results = []
 
         for i in range(num_tests):
