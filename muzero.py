@@ -1,19 +1,20 @@
-import os
-import time
-import datetime
-import numpy as np
-import pickle
-import ray
 import copy
+import os
+import datetime
+import time
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
+
+import ray
+import pickle
+import numpy as np
 import tensorflow as tf
 
-from models import MuZeroNetwork, MuZeroResidualNetwork
-from self_play import SelfPlay
-from replay_buffer import ReplayBuffer
-from shared_storage import SharedStorage
 from trainer import Trainer
-from games.atari import AtariGame
+from shared_storage import SharedStorage
+from replay_buffer import ReplayBuffer
+from self_play import SelfPlay
+from models import MuZeroNetwork
 
 
 class MuZeroConfig:
@@ -130,10 +131,11 @@ class MuZero:
             else:
                 self.config = config
 
+        self.num_gpus = len(tf.config.list_physical_devices('GPU'))
+        ray.init(num_gpus=self.num_gpus, ignore_reinit_error=True)
+
         np.random.seed(self.config.seed)
         tf.random.set_seed(self.config.seed)
-
-        ray.init(num_gpus=0, ignore_reinit_error=True)
 
         # Checkpoint and replay buffer used to initialize workers
         self.checkpoint = {
@@ -171,20 +173,12 @@ class MuZero:
         self.replay_buffer_worker = None
         self.shared_storage_worker = None
 
-    def train(self, log_in_tensorboard=False):
+    def train(self, log_in_tensorboard=True):
         if log_in_tensorboard or self.config.save_model:
             os.makedirs(self.config.results_path, exist_ok=True)
 
-        # Initialize workers
-
-        if self.config.train_on_gpu:
-            n_cpus = 0
-            n_gpus = len(tf.config.list_physical_devices('GPU'))
-        else:
-            n_cpus = 1
-            n_gpus = 0
         self.training_worker = Trainer.options(
-            num_cpus=n_cpus, num_gpus=n_gpus).remote(self.config, self.checkpoint)
+            num_cpus=0, num_gpus=1).remote(self.config, self.checkpoint)
 
         self.shared_storage_worker = SharedStorage.remote(
             self.config, self.checkpoint)
@@ -193,19 +187,17 @@ class MuZero:
         self.replay_buffer_worker = ReplayBuffer.remote(
             self.config, self.checkpoint, self.replay_buffer)
 
-        self.self_play_workers = [SelfPlay.remote(self.checkpoint, self.game_name,
-                                                  self.config, self.config.seed + seed)
+        self.self_play_workers = [SelfPlay.options(num_cpus=1, num_gpus=0).remote(self.checkpoint, self.game_name,
+                                                                                  self.config, self.config.seed + seed)
                                   for seed in range(self.config.num_workers)]
 
         # launch self play
-        print("lauching self_play workers")
         for self_play_worker in self.self_play_workers:
-            print("lauching self_play worker")
             self_play_worker.continuous_self_play.remote(
                 self.shared_storage_worker, self.replay_buffer_worker)
-        time.sleep(100)
-        # self.training_worker.continuous_update_weights.remote(
-        #     self.replay_buffer_worker, self.shared_storage_worker)
+
+        self.training_worker.continuous_update_weights.remote(
+            self.replay_buffer_worker, self.shared_storage_worker)
 
         if log_in_tensorboard:
             self.logging_loop()
@@ -215,14 +207,23 @@ class MuZero:
             self.checkpoint, self.game_name, self.config, self.config.seed + self.config.num_workers)
         self.test_worker.continuous_self_play.remote(
             self.shared_storage_worker, None, True)
-        writer = tf.summary.create_file_writer("/tmp/mylogs/eager")
 
         hyper_params_table = [
             f"| {key} | {value} |" for key, value in self.config.__dict__.items()
         ]
-        tf.summary.text("model summary", "")
+        counter = 0
 
-        count = 0
+        with tf.device('/CPU'):
+            writer = tf.summary.create_file_writer("/tmp/mylogs/eager")
+            with writer.as_default():
+                tf.summary.text(
+                    "Hyperparameters",
+                    "| Parameter | Value |\n|-------|-------|\n" +
+                    "\n".join(hyper_params_table), counter
+                )
+
+                tf.summary.text("model summary", "", counter)
+
         keys = [
             "total_reward",
             "muzero_reward",
@@ -239,11 +240,17 @@ class MuZero:
             "num_played_steps",
             "num_reanalysed_games",
         ]
-
+        info = ray.get(self.shared_storage_worker.get_info.remote(keys))
         try:
-            while count < self.config.training_steps:
+            while info["training_step"] < self.config.training_steps:
+                info = ray.get(
+                    self.shared_storage_worker.get_info.remote(keys))
                 # details to be implemented
-                tf.summary.scalar("3.Loss/Reward_loss", 123, count)
+                with tf.device('/CPU'):
+                    with writer.as_default():
+                        tf.summary.scalar("3.Loss/Reward_loss",
+                                          info["reward_loss"], counter)
+                counter += 1
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass

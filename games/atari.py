@@ -1,4 +1,5 @@
 import os
+import time
 
 import cv2
 import numpy as np
@@ -18,7 +19,7 @@ class AtariGame(AbstractGame):
             self.game_name = "space_invaders"
         else:
             self.game_name = game_name
-        self.rom_file = f"/Users/alanquantum/MachineLearning/atari_roms/{game_name}.bin"
+        self.rom_file = f"/home/alanxu/Documents/{game_name}.bin"
         self.ale.loadROM(self.rom_file)
         self.img_size = img_size
 
@@ -51,6 +52,17 @@ if __name__ == "__main__":
     g = AtariGame(seed=123)
     img = g.reset()
     print(img.shape)
+
+    t0 = time.time()
+    count = 0
+    for i in range(1000):
+        a = np.random.randint(18)
+        _, _, done = g.step(a)
+        count += 1
+        if done:
+            break
+    print("steps: {}".format(count))
+    print(time.time() - t0)
 
     # img = cv2.resize(img, (96, 96))
 

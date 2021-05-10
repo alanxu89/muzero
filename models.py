@@ -1,6 +1,10 @@
+import tensorflow as tf
+import os
+
 from abc import ABC, abstractmethod
 import numpy as np
-import tensorflow as tf
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = "2"
 
 
 class MuZeroNetwork:
@@ -218,7 +222,7 @@ class MuZeroResidualNetwork(AbstractNetwork):
 
     def build_model(self):
         observation = tf.random.uniform([2, 96, 96, 128])
-        action = tf.constant([1, 2], dtype=tf.int32)
+        action = tf.constant([1, 2], dtype=tf.uint8)
         encoded_state = self.representation(observation)
         self.recurrent_inference(encoded_state, action)
 
@@ -284,6 +288,19 @@ def scalar_to_support(x, support_size):
 
 
 if __name__ == "__main__":
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(
+                logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
     rep_net = RepresentationNetwork(256)
     img_input = tf.random.uniform([4, 96, 96, 128])
     output = rep_net(img_input)
@@ -309,6 +326,3 @@ if __name__ == "__main__":
 
     print(scalar_to_support(tf.constant(
         [[-1.4, 1.3], [1.0, -1.9]]), support_size=2))
-
-    model = MuZeroResidualNetwork(4, 256, 300)
-    print(model.get_summary())

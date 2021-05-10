@@ -9,11 +9,14 @@ import tensorflow as tf
 import models
 from replay_buffer import ReplayBuffer
 from shared_storage import SharedStorage
+from utils import set_gpu_memory_growth
 
 
 @ray.remote
 class Trainer:
     def __init__(self, config, initial_checkpoint):
+        set_gpu_memory_growth()
+
         self.config = config
 
         np.random.seed(self.config.seed)
@@ -40,7 +43,16 @@ class Trainer:
     def continuous_update_weights(self,
                                   replay_buffer: ReplayBuffer,
                                   shared_storage: SharedStorage):
-        while self.training_step < self.config.training_steps:
+
+        # Wait for the replay buffer to be filled
+        while ray.get(shared_storage.get_info.remote("num_played_games")) < 1:
+            time.sleep(1)
+
+        next_batch = replay_buffer.get_batch.remote()
+
+        while self.training_step < self.config.training_steps and not ray.get(shared_storage.get_info.remote("terminate")):
+            print("training steps {} and terminate status {}".format(self.training_step,
+                                                                     ray.get(shared_storage.get_info.remote("terminate"))))
             batch = replay_buffer.get_batch.remote()
             priorities, total_loss, value_loss, reward_loss, policy_loss = self.update_weights(
                 batch)

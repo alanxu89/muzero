@@ -1,5 +1,4 @@
 import copy
-import time
 import ray
 import numpy as np
 
@@ -20,7 +19,7 @@ class ReplayBuffer:
 
         np.random.seed(self.config.seed)
 
-    def save_game(self, game_history, shared_storage=False):
+    def save_game(self, game_history, shared_storage=None):
         # priority
         if self.config.PER:
             if game_history.priorities is not None:

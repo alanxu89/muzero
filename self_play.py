@@ -41,7 +41,6 @@ class SelfPlay:
                     "self",
                     0,
                 )
-
                 replay_buffer.save_game.remote(game_history, shared_storage)
 
             else:
@@ -108,7 +107,8 @@ class SelfPlay:
             assert len(np.array(
                 observation).shape) == 3, "observation should be 3 dimensionnal"
             assert np.array(
-                observation).shape == self.config.observation_shape,  "Observation should match the observation_shape defined in MuZeroConfig"
+                observation).shape == self.config.observation_shape,  "Observation should "\
+                "match the observation_shape defined in MuZeroConfig"
 
             stacked_observations = game_history.get_stacked_observations(
                 -1, self.config.stacked_observations)
@@ -396,10 +396,11 @@ class MCTS:
         max_ucb = max(self.ucb_score(node, child, min_max_stats)
                       for _, child in node.children.items())
 
-        action = np.random.choice([
-            a for a, child in node.children.items()
-            if self.ucb_score(node, child, min_max_stats) == max_ucb
-        ])
+        actions_to_choose = []
+        for a, child in node.children.items():
+            if (self.ucb_score(node, child, min_max_stats) - max_ucb) < 1e-6:
+                actions_to_choose.append(a)
+        action = np.random.choice(actions_to_choose)
 
         return action, node.children[action]
 
